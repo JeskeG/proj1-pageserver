@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 
 import socket    # Basic TCP/IP communication on the internet
 import _thread   # Response computation runs concurrently with main program
+import os
 
 
 def listen(portnum):
@@ -76,6 +77,7 @@ STATUS_OK = "HTTP/1.0 200 OK\n\n"
 STATUS_FORBIDDEN = "HTTP/1.0 403 Forbidden\n\n"
 STATUS_NOT_FOUND = "HTTP/1.0 404 Not Found\n\n"
 STATUS_NOT_IMPLEMENTED = "HTTP/1.0 401 Not Implemented\n\n"
+BadRequests = ["~","..","//"]
 
 
 def respond(sock):
@@ -92,7 +94,27 @@ def respond(sock):
     parts = request.split()
     if len(parts) > 1 and parts[0] == "GET":
         transmit(STATUS_OK, sock)
-        transmit(CAT, sock)
+        DOCROOT = config.configuration().DOCROOT
+        source_path = os.path.join(DOCROOT, parts[1][1:])
+        log.debug("Source path: {}".format(source_path))
+        if parts[1][1:] and ".css" not in parts[1][1:] and ".html" not in parts[1][1:]:
+            transmit(STATUS_FORBIDDEN, sock)
+
+        else:
+            for bad in BadRequests:
+                if bad in parts[1][1:]:
+                    transmit(STATUS_FORBIDDEN, sock)
+                    sock.shutdown(socket.SHUT_RDWR)
+                    sock.close()
+            try:
+                with open(source_path, 'r', encoding='utf-8') as source:
+                    for line in source:
+                        transmit(line.strip(), sock)
+            except OSError as error:
+                log.warn("Failed to open or read file")
+                log.warn("Requested file was {}".format(source_path))
+                log.warn("Exception: {}".format(error))
+                transmit(STATUS_NOT_FOUND,sock) #the catch block will see if the file exists of not
     else:
         log.info("Unhandled request: {}".format(request))
         transmit(STATUS_NOT_IMPLEMENTED, sock)
